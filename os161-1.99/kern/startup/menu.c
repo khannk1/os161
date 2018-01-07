@@ -526,8 +526,10 @@ static
 int
 cmd_debug_on()
 {
-	kprintf("function called ...\n");
-	dbflags |= DB_THREADS
+	kprintf("dbflags was %d",dbflags)
+	dbflags |= DB_THREADS;
+	kprintf("dbflags is %d",dbflags)
+
 	return 0;
 }
 
