@@ -526,7 +526,7 @@ static
 int
 cmd_debug_on()
 {
-	#define UW 0
+	kprintf("function Called !!");
 	return 0;
 }
 
