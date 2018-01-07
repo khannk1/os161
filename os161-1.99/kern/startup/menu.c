@@ -526,7 +526,8 @@ static
 int
 cmd_debug_on()
 {
-	kprintf("function Called !!");
+	kprintf("function called ...\n");
+	dbflags |= DB_THREADS
 	return 0;
 }
 
