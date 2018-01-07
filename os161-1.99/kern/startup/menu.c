@@ -522,6 +522,14 @@ cmd_mainmenu(int n, char **a)
 	return 0;
 }
 
+static
+int
+cmd_debug_on()
+{
+	#define UW 0
+	return 0;
+}
+
 ////////////////////////////////////////
 //
 // Command table.
@@ -552,7 +560,7 @@ static struct {
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
 	{ "dth" ,   cmd_debug_on},
-	
+
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
 	{ "sp1",	whalemating },
