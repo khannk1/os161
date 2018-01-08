@@ -526,10 +526,7 @@ static
 int
 cmd_debug_on()
 {
-	kprintf("dbflags was %d",dbflags);
 	dbflags |= DB_THREADS;
-	kprintf("dbflags is %d",dbflags);
-
 	return 0;
 }
 
