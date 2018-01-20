@@ -17,9 +17,9 @@ then
 		pwd
 		bmake
 		bmake install
-		cd ../root
-		echo "Now I would have run sys161 command in "
-		sys161 kernel-ASST$1
+		# cd ../root
+		# echo "Now I would have run sys161 command in "
+		# sys161 kernel-ASST$1
 		pwd
 	else
 		echo "You haven't reached that assignment yet big boy. Hold your horses."
