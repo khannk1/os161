@@ -12,11 +12,11 @@ then
 		bmake depend
 		bmake
 		bmake install
-		cd ../../../
-		echo "Now I'm in"
-		pwd
-		bmake
-		bmake install
+		#cd ../../../
+		#echo "Now I'm in"
+		#pwd
+		#bmake
+		#bmake install
 		# cd ../root
 		# echo "Now I would have run sys161 command in "
 		# sys161 kernel-ASST$1

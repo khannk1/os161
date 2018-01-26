@@ -170,12 +170,13 @@ panic(const char *fmt, ...)
 		evil = 3;
 
 		/* Print the message. */
-		kprintf("panic: ");
+		kprintf("\033[1;31mpanic :");
 		putch_prepare();
 		va_start(ap, fmt);
 		__vprintf(console_send, NULL, fmt, ap);
 		va_end(ap);
 		putch_complete();
+		kprintf("\033[0m");
 	}
 
 	if (evil == 3) {

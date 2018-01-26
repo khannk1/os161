@@ -13,6 +13,10 @@ typedef enum Directions Direction;
 
 /* student-implemented functions for the road intersection problem */
 
+struct cv* retCV(Direction dir1);
+void setThreshold(struct cv *cv);
+int retCounter(Direction dir1);
+void WrapperBroadcast(Direction dir1, Direction dir2, Direction dir3);
 void intersection_sync_init(void);
 void intersection_sync_cleanup(void);
 void intersection_before_entry(Direction origin, Direction destination);
