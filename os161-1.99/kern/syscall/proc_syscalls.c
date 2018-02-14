@@ -95,46 +95,45 @@ sys_waitpid(pid_t pid,
 
 #if OPT_A2
 int sys_fork(struct trapframe *tf, pid_t *retval){
-  //DEBUG(DB_SYSCALL, "Called Sys_fork\n");
-  kprintf("hello there");
-  // KASSERT(tf != NULL);
-  // KASSERT(retval != NULL);
+  DEBUG(DB_SYSCALL, "Called Sys_fork\n");
+  (void)tf;
+  (void) retval;
+  KASSERT(tf != NULL);
+  KASSERT(retval != NULL);
 
-  // struct trapframe* child = kmalloc(sizeof(*tf));
-  // if (child == NULL){
-  //   tf->tf_v0 = ENOMEM;
-  //   tf->tf_a3 = -1;
-  //   return (-1);
-  // }
+  struct trapframe* child = kmalloc(sizeof(*tf));
+  if (child == NULL){
+    tf->tf_v0 = ENOMEM;
+    tf->tf_a3 = -1;
+    return (-1);
+  }
   // struct lock* fork_lock = lock_create("fork_lock");
   // if (fork_lock == NULL){
   //   tf->tf_v0 = ENOMEM;
   //   tf->tf_a3 = -1;
   //   return (-1);
   // }
-  //  *child = *tf;
+  *child = *tf;
 
-  // struct proc *childProcess = proc_create_runprogram("childProcess");
-  // if (childProcess == NULL){
-  //   kfree(child);
-  //   //lock_destroy(fork_lock);
-  //   tf->tf_v0 = ENOMEM;
-  //   tf->tf_a3 = -1;
-  //   return (-1);
-  // }
+  struct proc *childProcess = proc_create_runprogram("childProcess");
+  if (childProcess == NULL){
+    kfree(child);
+    //lock_destroy(fork_lock);
+    tf->tf_v0 = ENOMEM;
+    tf->tf_a3 = -1;
+    return (-1);
+  }
 
-  // struct addrspace *childAddressSpace;
-  // int ret;
-
-  // ret = as_copy(curproc->p_addrspace,&childAddressSpace);
-  // if (ret != 0){
-  //   kfree(child);
-  //   proc_destroy(childProcess);
-  //   //lock_destroy(fork_lock);
-  //   tf->tf_v0 = ENOMEM;
-  //   tf->tf_a3 = -1;
-  //   return (-1);
-  // }
+  int ret;
+  ret = as_copy(curproc->p_addrspace,&(childProcess->p_addrspace));
+  if (ret != 0){
+    kfree(child);
+    proc_destroy(childProcess);
+    //lock_destroy(fork_lock);
+    tf->tf_v0 = ENOMEM;
+    tf->tf_a3 = -1;
+    return (-1);
+  }
 
   // lock_acquire(childProcess->process_lock);
   //   childProcess->p_addrspace = childAddressSpace;
