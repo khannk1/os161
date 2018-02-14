@@ -46,7 +46,7 @@ void sys__exit(int exitcode) {
     array_remove(p->childrenArray,0);
     i += 1;
   }
- // int childlen2 = array_num(p->childrenArray);
+  //int childlen2 = array_num(p->childrenArray);
   //DEBUG(DB_SYSCALL,"New length of children %d \n", childlen2);
    
   if (p->parent_address == NULL){
