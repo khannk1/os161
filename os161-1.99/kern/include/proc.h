@@ -112,8 +112,8 @@ struct addrspace *curproc_getas(void);
 struct addrspace *curproc_setas(struct addrspace *);
 
 #if OPT_A2
-// void proc_destroy_part2(struct proc *proc);
-// void proc_destroy_part1(struct proc *proc);
+void proc_destroy_part2(struct proc *proc);
+void proc_destroy_part1(struct proc *proc);
 int getNewpid(void);
 volatile int global_pid_counter;
 #endif
