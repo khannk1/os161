@@ -38,9 +38,15 @@
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
+#include "opt-A2.h"
+#include <array.h>
 
 struct addrspace;
 struct vnode;
+// #if OPT_A2
+// struct lock;
+// #endif
+
 #ifdef UW
 struct semaphore;
 #endif // UW
@@ -52,6 +58,15 @@ struct proc {
 	char *p_name;			/* Name of this process */
 	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
+	#if OPT_A2
+		pid_t p_pid;
+		struct proc *parent_address;
+		struct array *childrenArray; 
+		struct lock *process_lock;
+		struct cv *p_cv;
+		int p_exitcode;
+		int processStatus;
+	#endif
 
 	/* VM */
 	struct addrspace *p_addrspace;	/* virtual address space */
@@ -100,5 +115,11 @@ struct addrspace *curproc_getas(void);
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *curproc_setas(struct addrspace *);
 
+#if OPT_A2
+void proc_destroy_part2(struct proc *proc);
+void proc_destroy_part1(struct proc *proc);
+int getNewpid(void);
+volatile int global_pid_counter;
+#endif
 
 #endif /* _PROC_H_ */

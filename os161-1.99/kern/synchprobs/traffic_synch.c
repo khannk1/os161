@@ -3,7 +3,7 @@
 #include <synchprobs.h>
 #include <synch.h>
 #include <opt-A1.h>
-#define THRESHOLD 5
+#include <queue.h>
 
 /* 
  * This simple default synchronization mechanism allows only vehicle at a time
@@ -56,12 +56,21 @@ volatile int originEastCounter = 0;
 volatile int originWestCounter = 0;
 
 volatile int carsAllowed = 0;
+static int carsInsideIntersection = 0;
 
 static struct lock *cvLock;
 static struct cv *originNorth;
 static struct cv *originSouth;
 static struct cv *originEast;
 static struct cv *originWest;
+
+static struct queue *CarwaitingQueue;
+static bool isitQueued[4] = {false};
+
+
+struct OriginDirection {
+  Direction origin;
+};
 
 
 
@@ -82,9 +91,14 @@ intersection_sync_init(void)
   originEast = cv_create("originEast");
   originWest = cv_create("originWest");
   cvLock = lock_create("cvLock");
+  CarwaitingQueue = q_create(4);
 
   if (originNorth == NULL || originSouth == NULL || originEast == NULL || originWest == NULL || cvLock == NULL){
     panic("could not create some cv or entryLock or exitLock");
+  }
+
+  if (CarwaitingQueue == NULL) {
+    panic("couldn't create the queue");
   }
   return;
 }
@@ -100,6 +114,9 @@ void
 intersection_sync_cleanup(void)
 {
   /* replace this default implementation with your own implementation */
+  KASSERT(q_empty(CarwaitingQueue));
+  KASSERT(CarwaitingQueue != NULL);
+  q_destroy(CarwaitingQueue);
   cv_destroy(originNorth);
   cv_destroy(originSouth);
   cv_destroy(originEast);
@@ -121,6 +138,21 @@ intersection_sync_cleanup(void)
  * return value: none
  */
 
+static void addToQueue(Direction origin) {
+
+  if (!isitQueued[origin]){
+
+    struct OriginDirection *item = kmalloc(sizeof(*item));
+
+    item->origin = origin;
+
+    q_addtail(CarwaitingQueue, item);
+
+    isitQueued[origin] = true;
+  }
+
+}
+
 void
 intersection_before_entry(Direction origin, Direction destination) 
 {
@@ -130,19 +162,39 @@ intersection_before_entry(Direction origin, Direction destination)
   // KASSERT(intersectionSem != NULL);
 
 lock_acquire(cvLock);
+
+  if(!q_empty(CarwaitingQueue)) {
+    if (!isitQueued[origin]) {
+      addToQueue(origin);
+    }
+    if (origin == north){
+      cv_wait(originNorth,cvLock);
+    } else if (origin == south){
+      cv_wait(originSouth,cvLock);
+    } else if (origin == east){
+      cv_wait(originEast,cvLock);
+    } else {
+      cv_wait(originWest,cvLock);
+    }
+    
+  }
+
   if (origin == north){
     if (destination == south){
         while(ew > 0 || we > 0 || ws > 0 || es > 0 || wn > 0 || sw > 0){
+          addToQueue(origin);
           cv_wait(originNorth,cvLock);
         }
         ns++;
     } else if (destination == east){
         while(se > 0 || we > 0 || sw > 0 || wn > 0 || ew > 0 || sn > 0 || es > 0){
+          addToQueue(origin);
           cv_wait(originNorth,cvLock);
         }
         ne++;
     } else if (destination == west){
       while(sw > 0 || ew > 0){
+        addToQueue(origin);
         cv_wait(originNorth,cvLock);
       }
       nw++;
@@ -150,16 +202,19 @@ lock_acquire(cvLock);
   } else if (origin == south){
     if (destination == north) {
         while(ew > 0 || we > 0 || wn > 0 || en > 0 || ne > 0 || es > 0){
+          addToQueue(origin);
           cv_wait(originSouth,cvLock);
         }
         sn++; 
     } else if (destination == east){
         while(ne > 0 || we > 0){
+          addToQueue(origin);
           cv_wait(originSouth,cvLock);
         }
         se++;
     } else if (destination == west){
         while(ne > 0 || ew > 0 || nw > 0 || wn > 0 || we > 0 || ns > 0 || es > 0){
+          addToQueue(origin);
           cv_wait(originSouth,cvLock);
         }
         sw++;
@@ -167,17 +222,20 @@ lock_acquire(cvLock);
   } else if (origin == west){
     if (destination == north){
         while(ns > 0 || sn > 0 || es > 0 || en > 0 || sw > 0 || ew > 0 || ne > 0){
+          addToQueue(origin);
           cv_wait(originWest,cvLock);
         }
         wn++;
     } else if (destination == south){
         while(ns > 0 || es > 0){
+          addToQueue(origin);
           cv_wait(originWest,cvLock);
         }
         ws++;
 
     } else if (destination == east){
         while(ns > 0 || sn > 0 || ne > 0 || se > 0 || es > 0 || sw > 0){
+          addToQueue(origin);
           cv_wait(originWest,cvLock);
         }
         we++;
@@ -185,21 +243,25 @@ lock_acquire(cvLock);
   } else if (origin == east){
     if (destination == north){
         while(wn > 0 || sn > 0){
+          addToQueue(origin);
           cv_wait(originEast,cvLock);
         }
         en++;
     } else if (destination == south){
         while(wn > 0 || ns > 0 || ws > 0 || sn > 0 || sw > 0 || we > 0 || ne > 0){
+          addToQueue(origin);
           cv_wait(originEast,cvLock);
         }
         es++;
     } else if (destination == west){
         while(ns > 0 || sn > 0 || nw > 0 || sw > 0 || ne > 0 || wn > 0){
+          addToQueue(origin);
           cv_wait(originEast,cvLock);
         }
         ew++;
     }
   }
+  carsInsideIntersection++;
   lock_release(cvLock);
 }
 
@@ -220,21 +282,23 @@ intersection_after_exit(Direction origin, Direction destination)
   /* replace this default implementation with your own implementation */
   // (void)origin;  /* avoid compiler complaint about unused parameter */
   // (void)destination; /* avoid compiler complaint about unused parameter */
-    if (origin == north){
-      lock_acquire(cvLock);
-        if (destination == south){
-            ns--;
-        } else if (destination == east){
-            ne--;
-        } else if (destination == west){
-            nw--;
-        }
-        cv_broadcast(originWest,cvLock);
-        cv_broadcast(originEast,cvLock);
-        cv_broadcast(originSouth,cvLock);
-      lock_release(cvLock);
+  lock_acquire(cvLock);
+  carsInsideIntersection--;
+
+  if (origin == north){
+      
+    if (destination == south){
+        ns--;
+    } else if (destination == east){
+        ne--;
+    } else if (destination == west){
+        nw--;
+    }
+        // cv_broadcast(originWest,cvLock);
+        // cv_broadcast(originEast,cvLock);
+        // cv_broadcast(originSouth,cvLock);
+
     } else if (origin == south){
-      lock_acquire(cvLock);
         if (destination == north) {
             sn--;
         } else if (destination == east){
@@ -243,13 +307,11 @@ intersection_after_exit(Direction origin, Direction destination)
             sw--;
         }
 
-        cv_broadcast(originNorth,cvLock);
-        cv_broadcast(originEast,cvLock);
-        cv_broadcast(originWest,cvLock);
+        // cv_broadcast(originNorth,cvLock);
+        // cv_broadcast(originEast,cvLock);
+        // cv_broadcast(originWest,cvLock);
         
-      lock_release(cvLock);
     } else if (origin == west){
-      lock_acquire(cvLock);
         if (destination == north){
             wn--;
         } else if (destination == south){
@@ -258,12 +320,10 @@ intersection_after_exit(Direction origin, Direction destination)
             we--;
         }
 
-        cv_broadcast(originEast,cvLock);
-        cv_broadcast(originSouth,cvLock);
-        cv_broadcast(originNorth,cvLock);
-      lock_release(cvLock);
+        // cv_broadcast(originEast,cvLock);
+        // cv_broadcast(originSouth,cvLock);
+        // cv_broadcast(originNorth,cvLock);
     } else if (origin == east){
-      lock_acquire(cvLock);
         if (destination == north){
             en--;
         } else if (destination == south){
@@ -271,9 +331,39 @@ intersection_after_exit(Direction origin, Direction destination)
         } else if (destination == west){
             ew--;
         }
-        cv_broadcast(originWest,cvLock);
-        cv_broadcast(originNorth,cvLock);
-        cv_broadcast(originSouth,cvLock);
-      lock_release(cvLock);
+      }
+
+  if (!q_empty(CarwaitingQueue) && carsInsideIntersection == 0) {
+    // Get the first car waiting 
+    struct OriginDirection *head = q_peek(CarwaitingQueue);
+    // Get the origin of this car
+    Direction OriginWaitingCar = head->origin;
+    // now remove it from the queue
+    q_remhead(CarwaitingQueue);
+
+
+    // cv_broadcast(originWest,cvLock);
+        // cv_broadcast(originNorth,cvLock);
+        // cv_broadcast(originSouth,cvLock);
+    if (OriginWaitingCar == north) {
+      isitQueued[OriginWaitingCar]=false;
+      cv_broadcast(originNorth, cvLock);
+    }
+    else if (OriginWaitingCar == south) {
+      isitQueued[OriginWaitingCar]=false;
+      cv_broadcast(originSouth, cvLock);
+    }
+    else if (OriginWaitingCar == east) {
+      isitQueued[OriginWaitingCar]=false;
+      cv_broadcast(originEast, cvLock);
+    }
+    else {
+      isitQueued[OriginWaitingCar]=false;
+      cv_broadcast(originWest, cvLock);
     }
 }
+
+lock_release(cvLock);
+
+}
+

@@ -50,6 +50,8 @@
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h>  
+#include <syscall.h>
+#include "opt-A2.h"
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -70,7 +72,6 @@ struct semaphore *no_proc_sem;
 #endif  // UW
 
 
-
 /*
  * Create a proc structure.
  */
@@ -79,7 +80,6 @@ struct proc *
 proc_create(const char *name)
 {
 	struct proc *proc;
-
 	proc = kmalloc(sizeof(*proc));
 	if (proc == NULL) {
 		return NULL;
@@ -98,6 +98,36 @@ proc_create(const char *name)
 
 	/* VFS fields */
 	proc->p_cwd = NULL;
+	#if OPT_A2
+	
+	proc->childrenArray = array_create();
+	if (proc->childrenArray == NULL) {
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+	proc->p_cv = cv_create("mycv");
+	if (proc->p_cv == NULL) {
+		array_destroy(proc->childrenArray);	
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+	proc->process_lock = lock_create("mylock");
+	if (proc->process_lock == NULL) {
+		array_destroy(proc->childrenArray);	
+		cv_destroy(proc->p_cv);
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+	proc->parent_address = NULL;
+	// 1 means he's alive
+	// 0 means he's a zombie
+	proc->processStatus = 1;
+	proc->p_exitcode = 0;
+
+	#endif
 
 #ifdef UW
 	proc->console = NULL;
@@ -106,12 +136,8 @@ proc_create(const char *name)
 	return proc;
 }
 
-/*
- * Destroy a proc structure.
- */
-void
-proc_destroy(struct proc *proc)
-{
+#if OPT_A2
+void proc_destroy_part1(struct proc *proc){
 	/*
          * note: some parts of the process structure, such as the address space,
          *  are destroyed in sys_exit, before we get here
@@ -165,9 +191,7 @@ proc_destroy(struct proc *proc)
 
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
-
-	kfree(proc->p_name);
-	kfree(proc);
+	array_destroy(proc->childrenArray);	
 
 #ifdef UW
 	/* decrement the process count */
@@ -183,9 +207,28 @@ proc_destroy(struct proc *proc)
 	}
 	V(proc_count_mutex);
 #endif // UW
-	
 
 }
+
+void proc_destroy_part2(struct proc *proc){
+	lock_destroy(proc->process_lock);
+	cv_destroy(proc->p_cv);
+	kfree(proc->p_name);
+	kfree(proc);
+}
+
+#endif
+/*
+ * Destroy a proc structure.
+ */
+void
+proc_destroy(struct proc *proc)
+{
+	proc_destroy_part1(proc);
+	proc_destroy_part2(proc);
+	
+}
+
 
 /*
  * Create the process structure for the kernel.
@@ -197,6 +240,14 @@ proc_bootstrap(void)
   if (kproc == NULL) {
     panic("proc_create for kproc failed\n");
   }
+
+  #if OPT_A2
+	globalLock = lock_create("globalLock");
+	if (globalLock == NULL) {
+		panic("could not create global lock\n");
+	}
+	global_pid_counter = 3;
+  #endif
 #ifdef UW
   proc_count = 0;
   proc_count_mutex = sem_create("proc_count_mutex",1);
@@ -242,7 +293,21 @@ proc_create_runprogram(const char *name)
 	/* VM fields */
 
 	proc->p_addrspace = NULL;
+	//proc->parent_address = NULL;
 
+	#if OPT_A2
+	lock_acquire(globalLock);
+	    // DEBUG(DB_SYSCALL, "\nTest call 1 to getpid %d\n",getNewpid());
+	    // DEBUG(DB_SYSCALL, "\nTest call 2 to getpid %d\n",getNewpid());
+	    // DEBUG(DB_SYSCALL, "\nTest call 3 to getpid %d\n",getNewpid());
+	    // DEBUG(DB_SYSCALL, "\nTest call 4 to getpid %d\n",getNewpid());
+	    //childProcess->p_pid = getNewpid();
+	    DEBUG(DB_SYSCALL,"Inside the global lock\n");
+	    proc->p_pid = getNewpid();
+	    DEBUG(DB_SYSCALL, "\nCur proc's Pid =  %d\n",proc->p_pid);
+  	lock_release(globalLock);
+  		DEBUG(DB_SYSCALL,"Released the global lock\n");
+  	#endif 
 	/* VFS fields */
 
 #ifdef UW
@@ -364,3 +429,13 @@ curproc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+#if OPT_A2
+int getNewpid(){
+	global_pid_counter += 1;
+	return global_pid_counter;
+
+}
+#endif
+
+
