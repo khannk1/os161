@@ -92,3 +92,78 @@ sys_waitpid(pid_t pid,
   return(0);
 }
 
+
+#if OPT_A2
+int sys_fork(struct trapframe *tf, pid_t *retval){
+  //DEBUG(DB_SYSCALL, "Called Sys_fork\n");
+  kprintf("hello there");
+  // KASSERT(tf != NULL);
+  // KASSERT(retval != NULL);
+
+  // struct trapframe* child = kmalloc(sizeof(*tf));
+  // if (child == NULL){
+  //   tf->tf_v0 = ENOMEM;
+  //   tf->tf_a3 = -1;
+  //   return (-1);
+  // }
+  // struct lock* fork_lock = lock_create("fork_lock");
+  // if (fork_lock == NULL){
+  //   tf->tf_v0 = ENOMEM;
+  //   tf->tf_a3 = -1;
+  //   return (-1);
+  // }
+  //  *child = *tf;
+
+  // struct proc *childProcess = proc_create_runprogram("childProcess");
+  // if (childProcess == NULL){
+  //   kfree(child);
+  //   //lock_destroy(fork_lock);
+  //   tf->tf_v0 = ENOMEM;
+  //   tf->tf_a3 = -1;
+  //   return (-1);
+  // }
+
+  // struct addrspace *childAddressSpace;
+  // int ret;
+
+  // ret = as_copy(curproc->p_addrspace,&childAddressSpace);
+  // if (ret != 0){
+  //   kfree(child);
+  //   proc_destroy(childProcess);
+  //   //lock_destroy(fork_lock);
+  //   tf->tf_v0 = ENOMEM;
+  //   tf->tf_a3 = -1;
+  //   return (-1);
+  // }
+
+  // lock_acquire(childProcess->process_lock);
+  //   childProcess->p_addrspace = childAddressSpace;
+  //   childProcess->parent_address = curproc;
+  //   //DEBUG(DB_SYSCALL, "Just set the child's parent address to %p\n",curproc);
+  // lock_release(childProcess->process_lock);
+
+  // //DEBUG(DB_SYSCALL, "Just created a child with pid %d\n",childProcess->p_pid);
+
+  // unsigned *index;
+  // lock_acquire(curproc->process_lock);
+  // array_add(curproc->childrenArray, childProcess, index);
+  // lock_release(curproc->process_lock);
+ 
+  // //DEBUG(DB_SYSCALL, "Child ppid = %lu \n", (unsigned long) childProcess->p_pid);
+  // unsigned long data = 0;
+  // ret = thread_fork("childThread",childProcess,enter_forked_process,child,data);
+  // if (ret != 0){
+  //   kfree(child);
+  //   proc_destroy(childProcess);
+  //   //lock_destroy(fork_lock);
+  //   tf->tf_v0 = ENOTSUP;
+  //   tf->tf_a3 = -1;
+  //   return (-1);
+  // }
+
+  // //lock_destroy(fork_lock);
+  // *retval = childProcess->p_pid;
+  return(0);
+}
+
+#endif
