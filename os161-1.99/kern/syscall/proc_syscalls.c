@@ -9,6 +9,10 @@
 #include <thread.h>
 #include <addrspace.h>
 #include <copyinout.h>
+// Added by me
+#include <mips/trapframe.h>
+#include <synch.h>
+#include "opt-A2.h"
 
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
@@ -55,7 +59,9 @@ sys_getpid(pid_t *retval)
 {
   /* for now, this is just a stub that always returns a PID of 1 */
   /* you need to fix this to make it work properly */
-  *retval = 1;
+  #if OPT_A2
+    *retval = curproc->p_pid;
+  #endif
   return(0);
 }
 
@@ -99,32 +105,24 @@ int sys_fork(struct trapframe *tf, pid_t *retval){
   KASSERT(tf != NULL);
   KASSERT(retval != NULL);
 
-  struct trapframe* child = kmalloc(sizeof(*tf));
-  if (child == NULL){
-    tf->tf_v0 = ENOMEM;
-    tf->tf_a3 = -1;
-    return (-1);
-  }
-
-  *child = *tf;
-
   struct proc *childProcess = proc_create_runprogram("childProcess");
   if (childProcess == NULL){
-    kfree(child);
-    tf->tf_v0 = ENOMEM;
-    tf->tf_a3 = -1;
-    return (-1);
+    return (ENOMEM);
   }
 
-  int ret;
-  ret = as_copy(curproc->p_addrspace,&(childProcess->p_addrspace));
+  int ret = as_copy(curproc->p_addrspace,&(childProcess->p_addrspace));
   if (ret != 0){
-    kfree(child);
     proc_destroy(childProcess);
-    tf->tf_v0 = ENOMEM;
-    tf->tf_a3 = -1;
-    return (-1);
+    return (ENOMEM);
   }
+
+  struct trapframe* child_tf = kmalloc(sizeof(struct trapframe));
+  if (child_tf == NULL){
+    proc_destroy(childProcess);
+    return (ENOMEM);
+  }
+
+  memcpy(child_tf,tf,sizeof(struct trapframe));
 
   // lock_acquire(childProcess->process_lock);
   childProcess->parent_address = curproc;
@@ -133,20 +131,19 @@ int sys_fork(struct trapframe *tf, pid_t *retval){
 
   DEBUG(DB_SYSCALL, "Just created a child with pid %d\n",childProcess->p_pid);
 
-  unsigned *index;
-  lock_acquire(curproc->process_lock);
-  array_add(curproc->childrenArray, childProcess, index);
-  lock_release(curproc->process_lock);
- 
+  //lock_acquire(globalLock);
+  array_add(curproc->childrenArray, childProcess, NULL);
+  //lock_release(globalLock);
+
   //DEBUG(DB_SYSCALL, "Child ppid = %lu \n", (unsigned long) childProcess->p_pid);
   unsigned long data = 0;
-  ret = thread_fork("childThread",childProcess,enter_forked_process,child,data);
+  ret = thread_fork("childThread",childProcess,enter_forked_process,child_tf,data);
   if (ret != 0){
-    kfree(child);
+    // You've already added the child to your array. 
+    // If you couldn't fork, figure out a way to remove him from your array here. 
+    kfree(child_tf);
     proc_destroy(childProcess);
-    tf->tf_v0 = ENOTSUP;
-    tf->tf_a3 = -1;
-    return (-1);
+    return (ENOTSUP);
   }
 
   *retval = childProcess->p_pid;

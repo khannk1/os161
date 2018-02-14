@@ -49,7 +49,9 @@
 #include <vnode.h>
 #include <vfs.h>
 #include <synch.h>
-#include <kern/fcntl.h>  
+#include <kern/fcntl.h>
+#include <syscall.h>
+#include "opt-A2.h"
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -96,6 +98,8 @@ proc_create(const char *name)
 	#if OPT_A2
 	
 	proc->childrenArray = array_create();
+	array_init(proc->childrenArray);
+	
 	if (proc->childrenArray == NULL) {
 		kfree(proc->p_name);
 		//Clean up threadarray - line 93
@@ -242,7 +246,7 @@ proc_bootstrap(void)
 	}
 	global_pid_counter = 3;
   #endif
-	
+
 #ifdef UW
   proc_count = 0;
   proc_count_mutex = sem_create("proc_count_mutex",1);

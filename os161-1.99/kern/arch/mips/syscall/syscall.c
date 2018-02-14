@@ -131,7 +131,6 @@ syscall(struct trapframe *tf)
 	  break;
 	#if OPT_A2
 	case SYS_fork:
-		
 	  	err = sys_fork(tf ,(pid_t *)&retval);
 		break;
     #endif
@@ -187,13 +186,17 @@ syscall(struct trapframe *tf)
 void 
 enter_forked_process(void *tf, unsigned long data){
   (void)data;
-  struct trapframe childTf = *((struct trapframe*)tf);
+  struct trapframe childTf;
+  memcpy(&childTf,tf,sizeof(struct trapframe));
+  kfree(tf);
+  
   childTf.tf_v0 = 0;
   childTf.tf_a3 = 0;
   childTf.tf_epc += 4;
-
-  kfree(tf);
   mips_usermode(&childTf);
 }
 
 #endif
+
+
+
