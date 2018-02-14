@@ -43,6 +43,11 @@ void syscall(struct trapframe *tf);
  * Support functions.
  */
 
+#if OPT_A2
+int sys_fork(struct trapframe *tf, pid_t* retval);
+struct lock *globalLock;
+#endif
+
 /* Helper for fork(). You write this. */
 void enter_forked_process(struct trapframe *tf);
 
