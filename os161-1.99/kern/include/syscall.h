@@ -43,7 +43,7 @@ void syscall(struct trapframe *tf);
 
 #if OPT_A2
 int sys_fork(struct trapframe *tf, pid_t* retval);
-//struct lock *globalLock;
+struct lock *globalLock;
 #endif
 /*
  * Support functions.
@@ -74,3 +74,5 @@ int sys_waitpid(pid_t pid, userptr_t status, int options, pid_t *retval);
 #endif // UW
 
 #endif /* _SYSCALL_H_ */
+
+

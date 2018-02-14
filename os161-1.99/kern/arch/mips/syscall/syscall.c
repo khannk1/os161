@@ -174,6 +174,8 @@ syscall(struct trapframe *tf)
 	KASSERT(curthread->t_iplhigh_count == 0);
 }
 
+
+#if OPT_A2
 /*
  * Enter user mode for a newly forked process.
  *
@@ -182,9 +184,16 @@ syscall(struct trapframe *tf)
  *
  * Thus, you can trash it and do things another way if you prefer.
  */
-void
-enter_forked_process(void *tf, unsigned long data)
-{
-	(void)tf;
-	(void)data;
+void 
+enter_forked_process(void *tf, unsigned long data){
+  (void)data;
+  struct trapframe childTf = *((struct trapframe*)tf);
+  childTf.tf_v0 = 0;
+  childTf.tf_a3 = 0;
+  childTf.tf_epc += 4;
+
+  kfree(tf);
+  mips_usermode(&childTf);
 }
+
+#endif

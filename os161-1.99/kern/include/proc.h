@@ -38,6 +38,7 @@
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
+#include "opt-A2.h"
 
 struct addrspace;
 struct vnode;
@@ -52,6 +53,16 @@ struct proc {
 	char *p_name;			/* Name of this process */
 	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
+
+	#if OPT_A2
+		pid_t p_pid; // The pid is initialised in the proc_create_runprogram()
+		struct proc *parent_address; // This is initialized in the proc_create()
+		struct array *childrenArray; // This is an array of pointers to children, initialised in proc_create()
+		struct lock *process_lock; // This is a lock for the process.
+		struct cv *p_cv; // This is a cv for the process.
+		int p_exitcode; // This is the exit code.
+		int processStatus; // This is the processStatus. 0 -> Zombie and 1 -> Alive
+	#endif
 
 	/* VM */
 	struct addrspace *p_addrspace;	/* virtual address space */
@@ -100,5 +111,11 @@ struct addrspace *curproc_getas(void);
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *curproc_setas(struct addrspace *);
 
+#if OPT_A2
+// void proc_destroy_part2(struct proc *proc);
+// void proc_destroy_part1(struct proc *proc);
+int getNewpid(void);
+volatile int global_pid_counter;
+#endif
 
 #endif /* _PROC_H_ */

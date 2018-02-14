@@ -93,6 +93,43 @@ proc_create(const char *name)
 	threadarray_init(&proc->p_threads);
 	spinlock_init(&proc->p_lock);
 
+	#if OPT_A2
+	
+	proc->childrenArray = array_create();
+	if (proc->childrenArray == NULL) {
+		kfree(proc->p_name);
+		//Clean up threadarray - line 93
+		spinlock_cleanup(&proc->p_lock);
+		kfree(proc);
+		return NULL;
+	}
+	proc->p_cv = cv_create("mycv");
+	if (proc->p_cv == NULL) {
+		array_destroy(proc->childrenArray);	
+		//Clean up threadarray - line 93
+		spinlock_cleanup(&proc->p_lock);
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+	proc->process_lock = lock_create("mylock");
+	if (proc->process_lock == NULL) {
+		array_destroy(proc->childrenArray);	
+		//Clean up threadarray - line 93
+		spinlock_cleanup(&proc->p_lock);
+		cv_destroy(proc->p_cv);
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+	proc->parent_address = NULL;
+	// 1 means he's alive
+	// 0 means he's a zombie
+	proc->processStatus = 1;
+	proc->p_exitcode = 0;
+
+	#endif
+
 	/* VM fields */
 	proc->p_addrspace = NULL;
 
@@ -197,6 +234,15 @@ proc_bootstrap(void)
   if (kproc == NULL) {
     panic("proc_create for kproc failed\n");
   }
+
+  #if OPT_A2
+	globalLock = lock_create("globalLock");
+	if (globalLock == NULL) {
+		panic("could not create global lock\n");
+	}
+	global_pid_counter = 3;
+  #endif
+	
 #ifdef UW
   proc_count = 0;
   proc_count_mutex = sem_create("proc_count_mutex",1);
@@ -242,6 +288,15 @@ proc_create_runprogram(const char *name)
 	/* VM fields */
 
 	proc->p_addrspace = NULL;
+
+	#if OPT_A2
+		lock_acquire(globalLock);
+	    DEBUG(DB_SYSCALL,"Inside the global lock\n");
+	    proc->p_pid = getNewpid();
+	    DEBUG(DB_SYSCALL, "\nCur proc's Pid =  %d\n",proc->p_pid);
+  		lock_release(globalLock);
+  		DEBUG(DB_SYSCALL,"Released the global lock\n");
+  	#endif 
 
 	/* VFS fields */
 
@@ -364,3 +419,10 @@ curproc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+#if OPT_A2
+int getNewpid(){
+	global_pid_counter += 1;
+	return global_pid_counter;
+}
+#endif
