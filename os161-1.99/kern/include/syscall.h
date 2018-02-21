@@ -43,7 +43,7 @@ void syscall(struct trapframe *tf);
 
 #if OPT_A2
 int sys_fork(struct trapframe *tf, pid_t* retval);
-int sys_execv(struct trapframe *tf);
+int sys_execv(const char *progname);
 struct lock *globalLock;
 #endif
 /*
