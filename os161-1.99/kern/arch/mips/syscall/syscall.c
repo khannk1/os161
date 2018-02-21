@@ -133,6 +133,9 @@ syscall(struct trapframe *tf)
 	case SYS_fork:
 	  	err = sys_fork(tf ,(pid_t *)&retval);
 		break;
+	case SYS_execv:
+		err = sys_execv(tf);
+		break;
     #endif
 #endif // UW
 
@@ -189,7 +192,7 @@ enter_forked_process(void *tf, unsigned long data){
   struct trapframe childTf;
   memcpy(&childTf,tf,sizeof(struct trapframe));
   kfree(tf);
-  
+
   childTf.tf_v0 = 0;
   childTf.tf_a3 = 0;
   childTf.tf_epc += 4;
