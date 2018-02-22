@@ -309,11 +309,11 @@ proc_create_runprogram(const char *name)
 
 	#if OPT_A2
 		lock_acquire(globalLock);
-	    DEBUG(DB_SYSCALL,"Inside the global lock\n");
+	    //DEBUG(DB_SYSCALL,"Inside the global lock\n");
 	    proc->p_pid = getNewpid();
-	    DEBUG(DB_SYSCALL, "\nCur proc's Pid =  %d\n",proc->p_pid);
+	    //DEBUG(DB_SYSCALL, "\nCur proc's Pid =  %d\n",proc->p_pid);
   		lock_release(globalLock);
-  		DEBUG(DB_SYSCALL,"Released the global lock\n");
+  		//DEBUG(DB_SYSCALL,"Released the global lock\n");
   	#endif 
 
 	/* VFS fields */
