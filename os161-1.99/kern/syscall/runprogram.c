@@ -44,6 +44,8 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <copyinout.h>
+#include "opt-A2.h"
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -52,12 +54,13 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(char *progname, char** argv)
 {
 	struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
+	//(void)argv;
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
@@ -97,8 +100,67 @@ runprogram(char *progname)
 		return result;
 	}
 
+	int index = 0;
+	int arg_length;
+
+	// We iterate through the char** on the kernel here. 
+	while(argv[index] != NULL){
+			char *argument;
+			// Adding 1 to the length for for \0
+			arg_length = strlen(argv[index]) + 1; 
+			int original_length = arg_length;
+			//Checking if the length of this string is divisible by 4 or not otherwise we make 
+			if (arg_length % 4 != 0) {
+				arg_length += (4 - (arg_length % 4));
+			}
+			//arg_length = ROUNDUP(arg_length, 4);
+			//DEBUG(DB_SYSCALL,"Old Arg_length = %d, New Arg_length : %d",original_length,arg_length);
+
+			argument = kmalloc(sizeof(arg_length));
+			argument = kstrdup(argv[index]);
+
+			int i = 0;
+			while (i < arg_length){
+				if (i >= original_length)
+					argument[i] = '\0';
+				else
+					argument[i] = argv[index][i];
+				i += 1;
+			}
+
+			// DEBUG(DB_SYSCALL,"VALUE OF ARGUMENT IN KERNEL AFTER PADDING : ");
+			//Subtracting from the Stack pointer and then copying the item argument on the stack
+			stackptr -= arg_length;
+
+			result = copyout((const void *) argument, (userptr_t)stackptr,(size_t) arg_length);
+			if (result) {
+				kfree(argument);
+				return result;
+			}
+
+			kfree(argument);
+			
+			argv[index] = (char *)stackptr;
+			index+= 1;	
+		}
+
+			if (argv[index] == NULL) {
+					stackptr -= 4 * sizeof(char);
+			}
+
+		int counter = index-1; // As we don't want NULL
+		while (counter >= 0){
+			stackptr = stackptr - sizeof(char*);
+			result = copyout((const void *)(argv+counter), (userptr_t) stackptr, (sizeof(char *)));
+			if (result) {
+				return result;
+			}
+			counter -= 1;
+		}
+
+
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	enter_new_process(index /*argc*/, (userptr_t)stackptr /*userspace addr of argv*/,
 			  stackptr, entrypoint);
 	
 	/* enter_new_process does not return. */

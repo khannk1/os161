@@ -45,6 +45,7 @@ void syscall(struct trapframe *tf);
 int sys_fork(struct trapframe *tf, pid_t* retval);
 int sys_execv(const char *progname, char **argv);
 struct lock *globalLock;
+struct lock *execvLock;
 #endif
 /*
  * Support functions.

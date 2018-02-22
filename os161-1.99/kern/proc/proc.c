@@ -258,6 +258,10 @@ proc_bootstrap(void)
 	if (globalLock == NULL) {
 		panic("could not create global lock\n");
 	}
+	execvLock = lock_create("execvLock");
+	if (execvLock == NULL) {
+		panic("could not create execvLock lock\n");
+	}
 	global_pid_counter = 3;
   #endif
 

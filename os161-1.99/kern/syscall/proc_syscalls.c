@@ -247,13 +247,16 @@ int sys_execv(const char *progname,char **argv){
 	vaddr_t entrypoint, stackptr;
 	int result;
 
-	KASSERT(progname != NULL);
+	lock_acquire(execvLock);
 	// Can the argv argument be a null pointer?
-	KASSERT(argv != NULL);
-
+	if(progname == NULL || argv == NULL){
+		return EFAULT;
+	}
+	// Create space for the program name on the kernel stack
 	char *progname_kernel = (char*) kmalloc(sizeof(char)* PATH_MAX);
 	size_t size;
 
+	// Copy the progname from the userspace to the kernel stack
 	result = copyinstr((const_userptr_t) progname, progname_kernel, PATH_MAX, &size);
 	if (result) {
 		kfree(progname_kernel);
@@ -262,8 +265,10 @@ int sys_execv(const char *progname,char **argv){
 
 	DEBUG(DB_SYSCALL,"Size of progname_kernel = %d\n",size);
 
+	// Similarly, Create space for the argument list on the kernel stack.
 	char **argv_kernel = (char**) kmalloc(sizeof(char **));
 
+	// Similarly, Copy the pointer to char * ( list of strings ) from the userspace to kernel stack
 	result = copyin((const_userptr_t) argv, argv_kernel, sizeof(char **));
 	if (result) {
 			kfree(progname_kernel);
@@ -271,9 +276,13 @@ int sys_execv(const char *progname,char **argv){
 			return EFAULT;
 	}
 
+
 	char** arguments = argv;
 	int argc = 0;
 	int i = 0;
+
+	// We're looping through the arguments on the userspace 
+	// and we're creating pointers to the data in the kernel_stack and copying the corresponding data over.
 	while(arguments[i] != NULL){
 		argv_kernel[i] = (char*) kmalloc(sizeof(char) * PATH_MAX);
 		result = copyinstr((const_userptr_t) argv[i], argv_kernel[i], PATH_MAX, &size);
@@ -339,22 +348,22 @@ int sys_execv(const char *progname,char **argv){
 		return result;
 	}
 
-	// Now, Need to copy arguments to the User Stack
+	// Now, we have the arguments on the kernel stack of the process 
+	// and we need to copy arguments to the UserStack that we just defined. 
 	int index = 0;
 	int arg_length;
+
+	// We iterate through the char** on the kernel here. 
 	while(argv_kernel[index] != NULL){
 			char *argument;
-
 			// Adding 1 to the length for for \0
 			arg_length = strlen(argv_kernel[index]) + 1; 
-
 			int original_length = arg_length;
-
 			//Checking if the length of this string is divisible by 4 or not otherwise we make 
 			if (arg_length % 4 != 0) {
 				arg_length += (4 - (arg_length % 4));
 			}
-			//arg_length = ROUNDUP(arg_length, 8);
+			//arg_length = ROUNDUP(arg_length, 4);
 			DEBUG(DB_SYSCALL,"Old Arg_length = %d, New Arg_length : %d",original_length,arg_length);
 
 
@@ -391,11 +400,11 @@ int sys_execv(const char *progname,char **argv){
 				stackptr -= 4 * sizeof(char);
 		}
 
-		for (int i = (index - 1); i >= 0; i--) {
-
+		int counter = index-1; // As we don't want NULL
+		while (counter >= 0){
 			stackptr = stackptr - sizeof(char*);
-
-			result = copyout((const void *) (argv_kernel + i), (userptr_t) stackptr, (sizeof(char *)));
+			result = copyout((const void *) (argv_kernel+counter), (userptr_t) stackptr, (sizeof(char *)));
+			counter -= 1;
 			if (result) {
 				kfree(progname_kernel);
 				kfree(argv_kernel);
@@ -406,6 +415,7 @@ int sys_execv(const char *progname,char **argv){
 		kfree(progname_kernel);
 		kfree(argv_kernel);
 
+		lock_release(execvLock);
 	/* Warp to user mode. */
 	enter_new_process(argc, (userptr_t) stackptr,
 				stackptr, entrypoint);

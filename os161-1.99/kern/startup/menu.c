@@ -45,6 +45,7 @@
 #include "opt-synchprobs.h"
 #include "opt-sfs.h"
 #include "opt-net.h"
+#include "opt-A2.h"
 
 /*
  * In-kernel menu and command dispatcher.
@@ -90,19 +91,30 @@ cmd_progthread(void *ptr, unsigned long nargs)
 	char **args = ptr;
 	char progname[128];
 	int result;
+	char * myargs[10];
 
 	KASSERT(nargs >= 1);
 
-	if (nargs > 2) {
-		kprintf("Warning: argument passing from menu not supported\n");
-	}
+	// if (nargs == 1) {
+	// 	//kprintf("Warning: argument passing from menu not supported\n");
+	// 	args[1] == NULL;
+	// } else {
+	// }
+
+	args[nargs] = NULL;
 
 	/* Hope we fit. */
 	KASSERT(strlen(args[0]) < sizeof(progname));
 
+	#if OPT_A2
+	for (unsigned long i = 0; i < nargs; i++){
+		myargs[i] = kstrdup(args[i]);
+	}
+	myargs[nargs] = NULL;
+	#endif
 	strcpy(progname, args[0]);
 
-	result = runprogram(progname);
+	result = runprogram(progname, myargs);
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
