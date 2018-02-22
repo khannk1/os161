@@ -287,8 +287,8 @@ int sys_execv(const char *progname,char **argv){
 		argv_kernel[i] = (char*) kmalloc(sizeof(char) * PATH_MAX);
 		result = copyinstr((const_userptr_t) argv[i], argv_kernel[i], PATH_MAX, &size);
 		if (result) {
-			kfree(progname_kernel);
 			kfree(argv_kernel);
+			kfree(progname_kernel);
 			return EFAULT;
 		}
 		i += 1;
@@ -303,9 +303,9 @@ int sys_execv(const char *progname,char **argv){
 	fname_temp = kstrdup(progname);
 	result = vfs_open((char*)progname, O_RDONLY, 0, &v);
 	if (result) {
+		kfree(argv_kernel);
 		kfree(fname_temp);
 		kfree(progname_kernel);
-		kfree(argv_kernel);
 		return result;
 	}
 	kfree(fname_temp);
@@ -317,8 +317,8 @@ int sys_execv(const char *progname,char **argv){
 	as = as_create();
 	if (as == NULL) {
 		vfs_close(v);
-		kfree(progname_kernel);
 		kfree(argv_kernel);
+		kfree(progname_kernel);
 		return ENOMEM;
 	}
 
@@ -331,8 +331,8 @@ int sys_execv(const char *progname,char **argv){
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		vfs_close(v);
-		kfree(progname_kernel);
 		kfree(argv_kernel);
+		kfree(progname_kernel);
 		return result;
 	}
 
@@ -343,8 +343,8 @@ int sys_execv(const char *progname,char **argv){
 	result = as_define_stack(as, &stackptr);
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
-		kfree(progname_kernel);
 		kfree(argv_kernel);
+		kfree(progname_kernel);
 		return result;
 	}
 
@@ -372,10 +372,11 @@ int sys_execv(const char *progname,char **argv){
 
 			int i = 0;
 			while (i < arg_length){
-				if (i >= original_length)
-					argument[i] = '\0';
-				else
+				if (i < original_length){
 					argument[i] = argv_kernel[index][i];
+				} else{
+					argument[i] = '\0';
+				}
 				i += 1;
 			}
 
@@ -385,8 +386,8 @@ int sys_execv(const char *progname,char **argv){
 
 			result = copyout((const void *) argument, (userptr_t)stackptr,(size_t) arg_length);
 			if (result) {
-				kfree(progname_kernel);
 				kfree(argv_kernel);
+				kfree(progname_kernel);
 				kfree(argument);
 				return result;
 			}
@@ -406,14 +407,15 @@ int sys_execv(const char *progname,char **argv){
 			result = copyout((const void *) (argv_kernel+counter), (userptr_t) stackptr, (sizeof(char *)));
 			counter -= 1;
 			if (result) {
-				kfree(progname_kernel);
 				kfree(argv_kernel);
+				kfree(progname_kernel);
 				return result;
 			}
 		}
 
-		kfree(progname_kernel);
 		kfree(argv_kernel);
+		kfree(progname_kernel);
+		
 
 		lock_release(execvLock);
 	/* Warp to user mode. */

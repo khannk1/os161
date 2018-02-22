@@ -118,13 +118,13 @@ runprogram(char *progname, char** argv)
 
 			argument = kmalloc(sizeof(arg_length));
 			argument = kstrdup(argv[index]);
-
 			int i = 0;
 			while (i < arg_length){
-				if (i >= original_length)
-					argument[i] = '\0';
-				else
+				if (i < original_length){
 					argument[i] = argv[index][i];
+				} else{
+					argument[i] = '\0';
+				}
 				i += 1;
 			}
 
@@ -139,7 +139,7 @@ runprogram(char *progname, char** argv)
 			}
 
 			kfree(argument);
-			
+
 			argv[index] = (char *)stackptr;
 			index+= 1;	
 		}

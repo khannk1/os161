@@ -91,7 +91,8 @@ cmd_progthread(void *ptr, unsigned long nargs)
 	char **args = ptr;
 	char progname[128];
 	int result;
-	char * myargs[10];
+	int maxargs = MAXMENUARGS + 1;
+	char * myargs[maxargs];
 
 	KASSERT(nargs >= 1);
 
