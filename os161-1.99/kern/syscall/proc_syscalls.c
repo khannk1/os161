@@ -353,6 +353,7 @@ int sys_execv(const char *progname,char **argv){
 	int index = 0;
 	int arg_length;
 
+	//char** my_final_string_locations = NULL;
 	// We iterate through the char** on the kernel here. 
 	while(argv_kernel[index] != NULL){
 			char *argument;
@@ -372,9 +373,7 @@ int sys_execv(const char *progname,char **argv){
 
 			int i = 0;
 			while (i < arg_length){
-				if (i < original_length){
-					argument[i] = argv_kernel[index][i];
-				} else{
+				if (i >= original_length){
 					argument[i] = '\0';
 				}
 				i += 1;
@@ -382,6 +381,9 @@ int sys_execv(const char *progname,char **argv){
 
 			// DEBUG(DB_SYSCALL,"VALUE OF ARGUMENT IN KERNEL AFTER PADDING : ");
 			//Subtracting from the Stack pointer and then copying the item argument on the stack
+
+			// IMPORTANT : you need to subtract the stack ptr first and then you need to copyout as
+			// Copyout will start and then grow upwards.
 			stackptr -= arg_length;
 
 			result = copyout((const void *) argument, (userptr_t)stackptr,(size_t) arg_length);
@@ -392,18 +394,22 @@ int sys_execv(const char *progname,char **argv){
 				return result;
 			}
 
+
 			kfree(argument);
 			argv_kernel[index] = (char *)stackptr;
 			index+= 1;	
 	}
 
-		if (argv_kernel[index] == NULL ) {
+		if (argv_kernel[index] == NULL) {
 				stackptr -= 4 * sizeof(char);
 		}
 
 		int counter = index-1; // As we don't want NULL
 		while (counter >= 0){
+			// Now we need to copy the pointers we created previously to the user stack.
+			// So we subtract the stack ptr. 
 			stackptr = stackptr - sizeof(char*);
+			// Now we copyout this pointer to the Userstack
 			result = copyout((const void *) (argv_kernel+counter), (userptr_t) stackptr, (sizeof(char *)));
 			counter -= 1;
 			if (result) {
