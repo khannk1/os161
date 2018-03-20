@@ -37,6 +37,9 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <copyinout.h>
+#include <limits.h>
+#include "opt-A3.h" 
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -200,9 +203,14 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		return 0;
 	}
 
-	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
+	#if OPT_A3
+
+	tlb_random(ehi,elo);
 	splx(spl);
-	return EFAULT;
+	#endif
+	// kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
+	// return EFAULT;
+	return 0;
 }
 
 struct addrspace *
@@ -357,8 +365,57 @@ as_define_stack_modified(struct addrspace *as, vaddr_t *stackptr,char** args)
 {
 	KASSERT(as->as_stackpbase != 0);
 	*stackptr = USERSTACK;
-	
 
+	char** argv_kernel = args;
+	int index = 0;
+	int result;
+	int arg_length;
+	// We iterate through the char** on the kernel here. 
+	while(argv_kernel[index] != NULL){
+			char *argument = NULL;
+			// Adding 1 to the length for for \0
+			arg_length = strlen(argv_kernel[index]) + 1; 
+			size_t original_length = arg_length;
+			//Checking if the length of this string is divisible by 4 or not otherwise we make 
+			arg_length = ROUNDUP(arg_length, 8);
+			DEBUG(DB_SYSCALL,"Old Arg_length = %d, New Arg_length : %d",original_length,arg_length);
+
+			argument = kmalloc(sizeof(arg_length));
+			argument = kstrdup(argv_kernel[index]);
+
+			// DEBUG(DB_SYSCALL,"VALUE OF ARGUMENT IN KERNEL AFTER PADDING : ");
+			//Subtracting from the Stack pointer and then copying the item argument on the stack
+
+			// IMPORTANT : you need to subtract the stack ptr first and then you need to copyout as
+			// Copyout will start and then grow upwards.
+			stackptr -= arg_length;
+
+			result = copyoutstr((const void *) argument, (userptr_t)stackptr,(size_t) arg_length, &original_length);
+			if (result) {
+				kfree(argument);
+				return result;
+			}
+			kfree(argument);
+			argv_kernel[index] = (char *)stackptr;
+			index+= 1;	
+	}
+
+		if (argv_kernel[index] == NULL) {
+				stackptr -= 4 * sizeof(char);
+		}
+
+		int counter = index-1; // As we don't want NULL
+		while (counter >= 0){
+			// Now we need to copy the pointers we created previously to the user stack.
+			// So we subtract the stack ptr. 
+			stackptr = stackptr - sizeof(char*);
+			// Now we copyout this pointer to the Userstack
+			result = copyout((const void *) (argv_kernel+counter), (userptr_t) stackptr, (sizeof(char *)));
+			counter -= 1;
+			if (result) {
+				return result;
+			}
+		}
 	return 0;
 }
 

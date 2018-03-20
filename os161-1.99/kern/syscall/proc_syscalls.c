@@ -341,6 +341,7 @@ int sys_execv(const char *progname,char **argv){
 
 	/* Define the user stack in the address space */
 	result = as_define_stack(as, &stackptr);
+	//result = as_define_stack_modified(as, &stackptr,argv_kernel);
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		kfree(argv_kernel);
@@ -353,48 +354,31 @@ int sys_execv(const char *progname,char **argv){
 	int index = 0;
 	int arg_length;
 
-	//char** my_final_string_locations = NULL;
 	// We iterate through the char** on the kernel here. 
 	while(argv_kernel[index] != NULL){
 			char *argument;
 			// Adding 1 to the length for for \0
 			arg_length = strlen(argv_kernel[index]) + 1; 
-			int original_length = arg_length;
+			size_t original_length = arg_length;
 			//Checking if the length of this string is divisible by 4 or not otherwise we make 
-			if (arg_length % 4 != 0) {
-				arg_length += (4 - (arg_length % 4));
-			}
-			//arg_length = ROUNDUP(arg_length, 4);
+			arg_length = ROUNDUP(arg_length, 8);
 			DEBUG(DB_SYSCALL,"Old Arg_length = %d, New Arg_length : %d",original_length,arg_length);
-
-
 			argument = kmalloc(sizeof(arg_length));
 			argument = kstrdup(argv_kernel[index]);
-
-			int i = 0;
-			while (i < arg_length){
-				if (i >= original_length){
-					argument[i] = '\0';
-				}
-				i += 1;
-			}
 
 			// DEBUG(DB_SYSCALL,"VALUE OF ARGUMENT IN KERNEL AFTER PADDING : ");
 			//Subtracting from the Stack pointer and then copying the item argument on the stack
 
 			// IMPORTANT : you need to subtract the stack ptr first and then you need to copyout as
-			// Copyout will start and then grow upwards.
+			// Copyout will start and then grow upwards.(size_t)
 			stackptr -= arg_length;
-
-			result = copyout((const void *) argument, (userptr_t)stackptr,(size_t) arg_length);
+			result = copyoutstr((const void *) argument, (userptr_t)stackptr, original_length, NULL);
 			if (result) {
 				kfree(argv_kernel);
 				kfree(progname_kernel);
 				kfree(argument);
 				return result;
 			}
-
-
 			kfree(argument);
 			argv_kernel[index] = (char *)stackptr;
 			index+= 1;	
@@ -404,7 +388,7 @@ int sys_execv(const char *progname,char **argv){
 				stackptr -= 4 * sizeof(char);
 		}
 
-		int counter = index-1; // As we don't want NULL
+		int counter = index; // As we don't want NULL
 		while (counter >= 0){
 			// Now we need to copy the pointers we created previously to the user stack.
 			// So we subtract the stack ptr. 
@@ -424,13 +408,12 @@ int sys_execv(const char *progname,char **argv){
 		
 
 		lock_release(execvLock);
-	/* Warp to user mode. */
-	enter_new_process(argc, (userptr_t) stackptr,
-				stackptr, entrypoint);
-	
-	/* enter_new_process does not return. */
-	panic("enter_new_process returned\n");
-	return EINVAL;
+		/* Warp to user mode. */
+		enter_new_process(argc, (userptr_t) stackptr,stackptr, entrypoint);
+		
+		/* enter_new_process does not return. */
+		panic("enter_new_process returned\n");
+		return EINVAL;
 
 }
 

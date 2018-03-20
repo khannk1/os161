@@ -108,26 +108,13 @@ runprogram(char *progname, char** argv)
 			char *argument;
 			// Adding 1 to the length for for \0
 			arg_length = strlen(argv[index]) + 1; 
-			int original_length = arg_length;
+			//cint original_length = arg_length;
 			//Checking if the length of this string is divisible by 4 or not otherwise we make 
-			if (arg_length % 4 != 0) {
-				arg_length += (4 - (arg_length % 4));
-			}
-			//arg_length = ROUNDUP(arg_length, 4);
+			arg_length = ROUNDUP(arg_length, 8);
 			//DEBUG(DB_SYSCALL,"Old Arg_length = %d, New Arg_length : %d",original_length,arg_length);
 
 			argument = kmalloc(sizeof(arg_length));
 			argument = kstrdup(argv[index]);
-			int i = 0;
-			while (i < arg_length){
-				if (i < original_length){
-					argument[i] = argv[index][i];
-				} else{
-					argument[i] = '\0';
-				}
-				i += 1;
-			}
-
 			// DEBUG(DB_SYSCALL,"VALUE OF ARGUMENT IN KERNEL AFTER PADDING : ");
 			//Subtracting from the Stack pointer and then copying the item argument on the stack
 			stackptr -= arg_length;
@@ -148,15 +135,15 @@ runprogram(char *progname, char** argv)
 					stackptr -= 4 * sizeof(char);
 			}
 
-		int counter = index-1; // As we don't want NULL
-		while (counter >= 0){
-			stackptr = stackptr - sizeof(char*);
-			result = copyout((const void *)(argv+counter), (userptr_t) stackptr, (sizeof(char *)));
-			if (result) {
-				return result;
+			int counter = index-1; // As we don't want NULL
+			while (counter >= 0){
+				stackptr = stackptr - sizeof(char*);
+				result = copyout((const void *)(argv+counter), (userptr_t) stackptr, (sizeof(char *)));
+				if (result) {
+					return result;
+				}
+				counter -= 1;
 			}
-			counter -= 1;
-		}
 
 
 	/* Warp to user mode. */
