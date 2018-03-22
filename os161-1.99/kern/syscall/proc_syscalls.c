@@ -17,7 +17,7 @@
 #include <limits.h>
 #include "opt-A2.h"
 
-void sys__exit(int exitcode) {
+void sys__exit(int exitcode,int myflag) {
 		
 		struct addrspace *as;
 		struct proc *p = curproc;
@@ -72,8 +72,13 @@ void sys__exit(int exitcode) {
 		//DEBUG(DB_SYSCALL,"Parent is alive bro! and my parent's pid is %d\n", curproc->parent_address->p_pid);
 		// Your parent is alive please become a zombie
 		//DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
-
-		p->p_exitcode = _MKWAIT_EXIT(exitcode);
+		//_MKWAIT_EXIT
+		if(myflag == 1){
+			p->p_exitcode = _MKWAIT_EXIT(exitcode);
+		} else if(myflag == 0){
+			p->p_exitcode = _MKWAIT_STOP(exitcode);
+		}
+		
 		p->processStatus = 0;
 
 		//DEBUG(DB_SYSCALL,"Waking up my parent cause im done. Peace out!\n");

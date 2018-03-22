@@ -38,6 +38,7 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <copyinout.h>
+#include <mips/trapframe.h>
 #include <limits.h>
 #include "opt-A3.h" 
 
@@ -52,26 +53,113 @@
 /*
  * Wrap rma_stealmem in a spinlock.
  */
-static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+static struct spinlock coremap_lock = SPINLOCK_INITIALIZER;
+
+//static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
+static int *coremap = NULL;
+paddr_t firstAddress;
+static int coremap_length = 0;
+
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 void
 vm_bootstrap(void)
 {
 	/* Do nothing. */
+
+	#if OPT_A3
+	paddr_t lowAddress, highAddress;
+	ram_getsize(&lowAddress,&highAddress);
+
+	// Pages are in Virtual Memory and Frames are in Physical memory.
+	int numPages = (highAddress - lowAddress)/PAGE_SIZE;
+	int numFrames = numPages;
+	coremap_length = numPages;
+	// How do i know how many frames are used for coremap?
+	// Need to see what's the memory used by the coremap?
+
+	paddr_t CoremapSize = (sizeof(int) * numFrames);
+
+	int numPagesCoremap =  (sizeof(int) * numFrames) / PAGE_SIZE;
+	
+	numPagesCoremap = ROUNDUP(numPagesCoremap,1);
+
+	firstAddress = lowAddress + (numPagesCoremap * PAGE_SIZE);
+
+    // We can just write to the memory as we own it as we are the kernel.
+	coremap = (int*) PADDR_TO_KVADDR(lowAddress);
+	// We are managing the memory of the CoreMap in the coremap, not suggested by lesley but FTW
+	// You set the first page is used by the coremap itself 
+	coremap[0] = numPagesCoremap;
+	// You then set the rest of the pages to -1
+	for(int i = 1; i < numPagesCoremap-1; i++){
+		coremap[i] = -1;
+	}
+	// The rest of the pages are all zero, we havent used anything.
+	for (int i = numPagesCoremap; i < numPages; i++){
+		coremap[i] = 0;
+	}
+	#endif
 }
 
 static
 paddr_t
 getppages(unsigned long npages)
 {
-	paddr_t addr;
 
-	spinlock_acquire(&stealmem_lock);
+	// Instead of doing this we need to actually get ppages.
+	// ram_stealmem was only for the vm_bootstrap
+	// spinlock_acquire(&coremap_lock);
+	// paddr_t addr;
+	// addr = ram_stealmem(npages);
+	// spinlock_release(&coremap_lock);
+	// return addr;
+	#if OPT_A3
+	if (coremap == NULL){
 
-	addr = ram_stealmem(npages);
+		spinlock_acquire(&coremap_lock);
+		paddr_t addr;
+		addr = ram_stealmem(npages);
+		spinlock_release(&coremap_lock);
+		return addr;
+
+	} else {
 	
-	spinlock_release(&stealmem_lock);
-	return addr;
+		paddr_t paddr;
+		spinlock_acquire(&coremap_lock);
+		bool foundSpace = false;
+		for(int i = 0; i < coremap_length;i++){
+			if(coremap[i] != 0){
+				continue;
+			} else {
+				unsigned long tempCount = 0;
+				for(unsigned long j = i; j < npages; j++){
+					if(coremap[j] == 0){
+						tempCount += 1;
+					}
+				}
+				if(tempCount == npages){
+					foundSpace = true;
+					coremap[i] = npages;
+					unsigned long minLen = MIN(npages,(unsigned long)coremap_length);
+					for(unsigned long k = i+1; k < minLen; k++){
+						coremap[k] = -1;
+					}
+					paddr = firstAddress + (PAGE_SIZE * i);
+				}
+			}
+		}
+
+		spinlock_release(&coremap_lock);
+		if(foundSpace){
+			return paddr;
+		} else{
+			return 0;
+		}
+
+	}
+	
+	#endif
 }
 
 /* Allocate/free some kernel-space virtual pages */
@@ -80,6 +168,7 @@ alloc_kpages(int npages)
 {
 	paddr_t pa;
 	pa = getppages(npages);
+	DEBUG(DB_KMALLOC,"%d",pa);
 	if (pa==0) {
 		return 0;
 	}
@@ -90,7 +179,13 @@ void
 free_kpages(vaddr_t addr)
 {
 	/* nothing - leak the memory. */
-
+	spinlock_acquire(&coremap_lock);
+	vaddr_t frameNumber = (PAGE_FRAME && addr);
+	int numPages = coremap[frameNumber];
+	for(int i = 0; i < numPages; i++){
+		coremap[i] = 0;
+	}
+	spinlock_release(&coremap_lock);
 	(void)addr;
 }
 
@@ -116,6 +211,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	uint32_t ehi, elo;
 	struct addrspace *as;
 	int spl;
+	int isText = 0;
 
 	faultaddress &= PAGE_FRAME;
 
@@ -124,7 +220,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
 		/* We always create pages read-write, so we can't get this */
-		panic("dumbvm: got VM_FAULT_READONLY\n");
+		//kill_curthread(EX_MOD);
+		//panic("dumbvm: got VM_FAULT_READONLY\n");
+		return EINVAL;
 	    case VM_FAULT_READ:
 	    case VM_FAULT_WRITE:
 		break;
@@ -173,6 +271,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	if (faultaddress >= vbase1 && faultaddress < vtop1) {
 		paddr = (faultaddress - vbase1) + as->as_pbase1;
+		isText = 1;
 	}
 	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
 		paddr = (faultaddress - vbase2) + as->as_pbase2;
@@ -188,6 +287,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	KASSERT((paddr & PAGE_FRAME) == paddr);
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
+
+	//elo &= ~TLBLO_DIRTY;
 	spl = splhigh();
 
 	for (i=0; i<NUM_TLB; i++) {
@@ -197,6 +298,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		}
 		ehi = faultaddress;
 		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		if(isText == 1 && as->loaded == 1){
+			elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+			elo &= ~TLBLO_DIRTY;
+		} else {
+			elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		}
+		isText = 0;
 		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 		tlb_write(ehi, elo, i);
 		splx(spl);
@@ -204,8 +312,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 
 	#if OPT_A3
-
-	tlb_random(ehi,elo);
+	ehi = faultaddress;
+	elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	if (tlb_probe(ehi,elo) < 0){
+		tlb_random(ehi,elo);
+	}
 	splx(spl);
 	#endif
 	// kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
@@ -228,6 +339,7 @@ as_create(void)
 	as->as_pbase2 = 0;
 	as->as_npages2 = 0;
 	as->as_stackpbase = 0;
+	as->loaded = 0;
 
 	return as;
 }

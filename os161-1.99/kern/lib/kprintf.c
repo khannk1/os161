@@ -40,7 +40,7 @@
 
 
 /* Flags word for DEBUG() macro. */
-uint32_t dbflags = 0;
+uint32_t dbflags = DB_KMALLOC;
 //DB_SYSCALL 0
 
 /* Lock for non-polled kprintfs */

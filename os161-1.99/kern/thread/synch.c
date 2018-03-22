@@ -172,7 +172,7 @@ lock_create(const char *name)
     spinlock_init(&lock->sp_lock);
 
     lock->lock_taken = false;
-    lock->myCurrThread = curthread;
+    lock->myCurrThread = NULL;
     // add stuff here as needed
     
     return lock;
@@ -187,7 +187,6 @@ lock_destroy(struct lock *lock)
         spinlock_cleanup(&lock->sp_lock);
         wchan_destroy(lock->lock_wchan);
         
-        //kfree(lock->myCurrThread);
         kfree(lock->lk_name);
         kfree(lock);
 }
@@ -276,7 +275,7 @@ cv_create(const char *name)
 
         cv = kmalloc(sizeof(struct cv));
         if (cv == NULL) {
-                return NULL;
+            return NULL;
         }
 
         cv->cv_name = kstrdup(name);
