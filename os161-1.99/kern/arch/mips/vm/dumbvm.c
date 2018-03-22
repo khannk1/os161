@@ -57,10 +57,22 @@ static struct spinlock coremap_lock = SPINLOCK_INITIALIZER;
 
 //static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 static int *coremap = NULL;
-paddr_t firstAddress;
+static paddr_t firstAddress;
 static int coremap_length = 0;
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
+
+int 
+cmd_showcoremap(int nargs, char **args)
+{
+	(void)nargs;
+	(void)args;
+	for(int i = 0;i < coremap_length; i ++){
+		kprintf("Coremap at %d : %d\n",i,coremap[i]);
+	}
+	return 0;
+}
 
 void
 vm_bootstrap(void)
@@ -78,13 +90,11 @@ vm_bootstrap(void)
 	// How do i know how many frames are used for coremap?
 	// Need to see what's the memory used by the coremap?
 
-	paddr_t CoremapSize = (sizeof(int) * numFrames);
-
-	int numPagesCoremap =  (sizeof(int) * numFrames) / PAGE_SIZE;
+	int CoremapSize = (sizeof(int) * numFrames);
+	CoremapSize = ROUNDUP(CoremapSize,PAGE_SIZE);
+	int numPagesCoremap =  CoremapSize / PAGE_SIZE;
 	
-	numPagesCoremap = ROUNDUP(numPagesCoremap,1);
-
-	firstAddress = lowAddress + (numPagesCoremap * PAGE_SIZE);
+	firstAddress = lowAddress;
 
     // We can just write to the memory as we own it as we are the kernel.
 	coremap = (int*) PADDR_TO_KVADDR(lowAddress);
@@ -109,31 +119,23 @@ getppages(unsigned long npages)
 
 	// Instead of doing this we need to actually get ppages.
 	// ram_stealmem was only for the vm_bootstrap
-	// spinlock_acquire(&coremap_lock);
-	// paddr_t addr;
-	// addr = ram_stealmem(npages);
-	// spinlock_release(&coremap_lock);
-	// return addr;
 	#if OPT_A3
 	if (coremap == NULL){
 
-		spinlock_acquire(&coremap_lock);
 		paddr_t addr;
 		addr = ram_stealmem(npages);
-		spinlock_release(&coremap_lock);
 		return addr;
 
 	} else {
 	
 		paddr_t paddr;
-		spinlock_acquire(&coremap_lock);
 		bool foundSpace = false;
 		for(int i = 0; i < coremap_length;i++){
 			if(coremap[i] != 0){
 				continue;
 			} else {
 				unsigned long tempCount = 0;
-				for(unsigned long j = i; j < npages; j++){
+				for(unsigned long j = i; j < i + npages; j++){
 					if(coremap[j] == 0){
 						tempCount += 1;
 					}
@@ -142,15 +144,15 @@ getppages(unsigned long npages)
 					foundSpace = true;
 					coremap[i] = npages;
 					unsigned long minLen = MIN(npages,(unsigned long)coremap_length);
-					for(unsigned long k = i+1; k < minLen; k++){
+					for(unsigned long k = i+1; k < i + minLen; k++){
 						coremap[k] = -1;
 					}
 					paddr = firstAddress + (PAGE_SIZE * i);
+					break;
 				}
 			}
 		}
 
-		spinlock_release(&coremap_lock);
 		if(foundSpace){
 			return paddr;
 		} else{
@@ -167,8 +169,9 @@ vaddr_t
 alloc_kpages(int npages)
 {
 	paddr_t pa;
+	spinlock_acquire(&coremap_lock);
 	pa = getppages(npages);
-	DEBUG(DB_KMALLOC,"%d",pa);
+	spinlock_release(&coremap_lock);
 	if (pa==0) {
 		return 0;
 	}
@@ -180,13 +183,27 @@ free_kpages(vaddr_t addr)
 {
 	/* nothing - leak the memory. */
 	spinlock_acquire(&coremap_lock);
-	vaddr_t frameNumber = (PAGE_FRAME && addr);
+	vaddr_t paddr = addr - MIPS_KSEG0;
+	int frameNumber = (paddr - firstAddress)/PAGE_SIZE;
 	int numPages = coremap[frameNumber];
-	for(int i = 0; i < numPages; i++){
+	for(int i = frameNumber; i < frameNumber+numPages; i++){
 		coremap[i] = 0;
 	}
 	spinlock_release(&coremap_lock);
 	(void)addr;
+}
+
+void 
+free_upages(paddr_t addr)
+{
+	/* nothing - leak the memory. */
+	spinlock_acquire(&coremap_lock);
+	int frameNumber = (addr - firstAddress)/PAGE_SIZE;
+	int numPages = coremap[frameNumber];
+	for(int i = frameNumber; i < frameNumber+numPages; i++){
+		coremap[i] = 0;
+	}
+	spinlock_release(&coremap_lock);
 }
 
 void
@@ -347,6 +364,9 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+	free_upages(as->as_pbase1);
+	free_upages(as->as_pbase2);
+	free_upages(as->as_stackpbase);
 	kfree(as);
 }
 
@@ -471,7 +491,7 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	return 0;
 }
 
-
+//sys161 kernel "p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p uw-testbin/vm-data1;p uw-testbin/vm-data1; p testbin/matmult;"
 int
 as_define_stack_modified(struct addrspace *as, vaddr_t *stackptr,char** args)
 {

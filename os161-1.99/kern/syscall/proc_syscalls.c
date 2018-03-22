@@ -18,7 +18,6 @@
 #include "opt-A2.h"
 
 void sys__exit(int exitcode,int myflag) {
-		
 		struct addrspace *as;
 		struct proc *p = curproc;
 		KASSERT(curproc->p_addrspace != NULL);

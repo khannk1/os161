@@ -42,6 +42,7 @@
 #include <sfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <vm.h>
 #include "opt-synchprobs.h"
 #include "opt-sfs.h"
 #include "opt-net.h"
@@ -543,6 +544,7 @@ cmd_debug_on()
 	return 0;
 }
 
+
 ////////////////////////////////////////
 //
 // Command table.
@@ -573,6 +575,7 @@ static struct {
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
 	{ "dth" ,   cmd_debug_on},
+	{ "coremap", cmd_showcoremap},
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
