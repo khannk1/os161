@@ -104,6 +104,8 @@ void ram_getsize(paddr_t *lo, paddr_t *hi);
 
 
 int cmd_showcoremap(int nargs, char **args);
+int cmd_showpagetable(int nargs, char **args);
+
 /*
  * TLB shootdown bits.
  *

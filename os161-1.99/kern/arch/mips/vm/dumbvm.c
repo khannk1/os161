@@ -74,6 +74,25 @@ cmd_showcoremap(int nargs, char **args)
 	return 0;
 }
 
+int cmd_showpagetable(int nargs, char **args){
+	(void)nargs;
+	(void)args;
+	struct addrspace *as;
+	as = curproc_getas();
+	if (as == NULL) {
+		/*
+		 * No address space set up. This is probably also a
+		 * kernel fault early in boot.
+		 */
+		return EFAULT;
+	}
+
+	for(unsigned int i = 0; i < as->as_npages1; i++){
+		kprintf("Page Num : %d , Physical address : %p",i,(void *)as->as_pbase1[i]);
+	}
+	return 0;
+}
+
 void
 vm_bootstrap(void)
 {
@@ -230,7 +249,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	int spl;
 	int isText = 0;
 
+	//kprintf("faultaddress before AND: %p\n",(void *)faultaddress);
 	faultaddress &= PAGE_FRAME;
+	//kprintf("faultaddress AFTER AND : %p\n",(void *)faultaddress);
 
 	DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
 
@@ -274,10 +295,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	KASSERT(as->as_npages2 != 0);
 	KASSERT(as->as_stackpbase != 0);
 	KASSERT((as->as_vbase1 & PAGE_FRAME) == as->as_vbase1);
-	KASSERT((as->as_pbase1 & PAGE_FRAME) == as->as_pbase1);
+	//KASSERT((as->as_pbase1 & PAGE_FRAME) == as->as_pbase1);
 	KASSERT((as->as_vbase2 & PAGE_FRAME) == as->as_vbase2);
-	KASSERT((as->as_pbase2 & PAGE_FRAME) == as->as_pbase2);
-	KASSERT((as->as_stackpbase & PAGE_FRAME) == as->as_stackpbase);
+	//KASSERT((as->as_pbase2 & PAGE_FRAME) == as->as_pbase2);
+	//KASSERT((as->as_stackpbase & PAGE_FRAME) == as->as_stackpbase);
 
 	vbase1 = as->as_vbase1;
 	vtop1 = vbase1 + as->as_npages1 * PAGE_SIZE;
@@ -287,20 +308,43 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	stacktop = USERSTACK;
 
 	if (faultaddress >= vbase1 && faultaddress < vtop1) {
-		paddr = (faultaddress - vbase1) + as->as_pbase1;
+		//paddr = (faultaddress - vbase1) + as->as_pbase1;
+		paddr_t newaddr = faultaddress - vbase1;
+		//kprintf("faultaddress after subtracting : %p\n",(void *)newaddr);
+		newaddr &= PAGE_FRAME;
+		//kprintf("faultaddress after anding: %p\n",(void *)newaddr);
+		int pagenum = newaddr/PAGE_SIZE;
+		paddr = as->as_pbase1[pagenum];
+		//kprintf("Pagenum : %d\n",pagenum);
+		//kprintf("Physical address : %p\n",(void *)paddr);
+		//kprintf("Physical address & PAGE_FRAME: %p\n", (void *)(paddr & PAGE_FRAME));
 		isText = 1;
 	}
 	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
-		paddr = (faultaddress - vbase2) + as->as_pbase2;
+		//paddr = (faultaddress - vbase2) + as->as_pbase2;
+		paddr_t newaddr = faultaddress - vbase2;
+		//kprintf("faultaddress after subtracting : %p\n",(void *)newaddr);
+		newaddr &= PAGE_FRAME;
+		//kprintf("faultaddress after anding: %p\n",(void *)newaddr);
+		int pagenum = newaddr/PAGE_SIZE;
+		paddr = as->as_pbase2[pagenum];
 	}
 	else if (faultaddress >= stackbase && faultaddress < stacktop) {
-		paddr = (faultaddress - stackbase) + as->as_stackpbase;
+		//paddr = (faultaddress - stackbase) + as->as_stackpbase;
+		paddr_t newaddr = faultaddress - stackbase;
+		//kprintf("faultaddress after subtracting : %p\n",(void *)newaddr);
+		newaddr &= PAGE_FRAME;
+		//kprintf("faultaddress after anding: %p\n",(void *)newaddr);
+		int pagenum = newaddr/PAGE_SIZE;
+		paddr = as->as_stackpbase[pagenum];
 	}
 	else {
 		return EFAULT;
 	}
 
 	/* make sure it's page-aligned */
+	// kprintf("Physical address before kassert: %p\n",(void *)paddr);
+	// kprintf("Physical address & PAGE_FRAME before kassert: %p\n", (void *)(paddr & PAGE_FRAME));
 	KASSERT((paddr & PAGE_FRAME) == paddr);
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
@@ -350,12 +394,18 @@ as_create(void)
 	}
 
 	as->as_vbase1 = 0;
-	as->as_pbase1 = 0;
+	as->as_pbase1 = NULL;
 	as->as_npages1 = 0;
 	as->as_vbase2 = 0;
-	as->as_pbase2 = 0;
+	as->as_pbase2 = NULL;
 	as->as_npages2 = 0;
-	as->as_stackpbase = 0;
+	as->as_stackpbase = kmalloc(sizeof(paddr_t) * DUMBVM_STACKPAGES);
+	if (as->as_stackpbase == 0) {
+		return NULL;
+	}
+	for (unsigned int i = 0; i < DUMBVM_STACKPAGES; i++){
+		as->as_stackpbase[i] = 0;
+	}
 	as->loaded = 0;
 
 	return as;
@@ -364,9 +414,18 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
-	free_upages(as->as_pbase1);
-	free_upages(as->as_pbase2);
-	free_upages(as->as_stackpbase);
+	for(unsigned int i = 0; i < as->as_npages1; i++){
+		free_upages(as->as_pbase1[i]);
+	}
+	for(unsigned int i = 0; i < as->as_npages2; i++){
+		free_upages(as->as_pbase2[i]);
+	}
+	for(unsigned int i = 0; i < DUMBVM_STACKPAGES; i++){
+		free_upages(as->as_stackpbase[i]);
+	}
+	free_upages((paddr_t)as->as_pbase1);
+	free_upages((paddr_t)as->as_pbase2);
+	free_upages((paddr_t)as->as_stackpbase);
 	kfree(as);
 }
 
@@ -423,14 +482,32 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	if (as->as_vbase1 == 0) {
 		as->as_vbase1 = vaddr;
 		as->as_npages1 = npages;
+		//kprintf("Initializing the page table for TEXT SEGMENT with %d pages\n",as->as_npages1);
+		as->as_pbase1 = kmalloc(sizeof(paddr_t) * npages);
+		if (as->as_pbase1 == 0) {
+			return ENOMEM;
+		}
+		for (unsigned int i = 0; i < npages; i++){
+			as->as_pbase1[i] = 0;
+		}
 		return 0;
 	}
 
 	if (as->as_vbase2 == 0) {
 		as->as_vbase2 = vaddr;
 		as->as_npages2 = npages;
+		//kprintf("Initializing the page table for CODE with %d pages\n",as->as_npages2);
+		as->as_pbase2 = kmalloc(sizeof(paddr_t) * as->as_npages2);
+		if (as->as_pbase2 == 0) {
+			return ENOMEM;
+		}
+		for (unsigned int i = 0; i < as->as_npages2; i++){
+			as->as_pbase2[i] = 0;
+		}
 		return 0;
 	}
+
+
 
 	/*
 	 * Support for more than two regions is not available.
@@ -449,28 +526,49 @@ as_zero_region(paddr_t paddr, unsigned npages)
 int
 as_prepare_load(struct addrspace *as)
 {
-	KASSERT(as->as_pbase1 == 0);
-	KASSERT(as->as_pbase2 == 0);
-	KASSERT(as->as_stackpbase == 0);
+	//KASSERT(as->as_pbase1 == 0);
+	//KASSERT(as->as_pbase2 == 0);
+	//KASSERT(as->as_stackpbase == 0);
 
-	as->as_pbase1 = getppages(as->as_npages1);
-	if (as->as_pbase1 == 0) {
-		return ENOMEM;
+	//kprintf("Getting frames for pagetable, Num pages %d\n",as->as_npages1);
+	for(unsigned int i = 0; i < as->as_npages1; i++){
+		paddr_t pageaddr = getppages(1);
+		if(pageaddr == 0){
+			return ENOMEM;
+		}
+		//kprintf("Physical address for pagetable: %p\n",(void *)pageaddr);
+		as->as_pbase1[i] = pageaddr;
+		as_zero_region(pageaddr, 1);
 	}
 
-	as->as_pbase2 = getppages(as->as_npages2);
-	if (as->as_pbase2 == 0) {
-		return ENOMEM;
+	//kprintf("Getting frames for pagetable, Num pages %d\n",as->as_npages2);
+	for(unsigned int i = 0; i < as->as_npages2; i++){
+		paddr_t pageaddr = getppages(1);
+		if(pageaddr == 0){
+			return ENOMEM;
+		}
+		//kprintf("Physical address for pagetable %d : %p\n",i,(void *)pageaddr);
+		as->as_pbase2[i] = pageaddr;
+		as_zero_region(pageaddr, 1);
 	}
 
-	as->as_stackpbase = getppages(DUMBVM_STACKPAGES);
-	if (as->as_stackpbase == 0) {
-		return ENOMEM;
+	//as->as_pbase2 = getppages(as->as_npages2);
+
+	for(unsigned int i = 0; i < DUMBVM_STACKPAGES; i++){
+		paddr_t pageaddr = getppages(1);
+		if(pageaddr == 0){
+			return ENOMEM;
+		}
+		//kprintf("Physical address for pagetable %d : %p\n",i,(void *)pageaddr);
+		as->as_stackpbase[i] = pageaddr;
+		as_zero_region(pageaddr, 1);
 	}
-	
-	as_zero_region(as->as_pbase1, as->as_npages1);
-	as_zero_region(as->as_pbase2, as->as_npages2);
-	as_zero_region(as->as_stackpbase, DUMBVM_STACKPAGES);
+
+	//as->as_stackpbase = getppages(DUMBVM_STACKPAGES);	
+	//as_zero_region(as->as_pbase1, as->as_npages1);
+	//as_zero_region(as->as_pbase2, as->as_npages2);
+	//as_zero_region(as->as_stackpbase, DUMBVM_STACKPAGES);
+
 
 	return 0;
 }
@@ -491,65 +589,67 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	return 0;
 }
 
-//sys161 kernel "p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p uw-testbin/vm-data1;p uw-testbin/vm-data1; p testbin/matmult;"
-int
-as_define_stack_modified(struct addrspace *as, vaddr_t *stackptr,char** args)
-{
-	KASSERT(as->as_stackpbase != 0);
-	*stackptr = USERSTACK;
+// uw-testbin/widefork
+// sys161 kernel "p uw-testbin/hogparty;p uw-testbin/hogparty;p uw-testbin/hogparty;p uw-testbin/hogparty;p uw-testbin/hogparty;p uw-testbin/hogparty;p uw-testbin/widefork;p uw-testbin/widefork;p uw-testbin/widefork;p uw-testbin/widefork;p uw-testbin/widefork;p uw-testbin/widefork;p uw-testbin/widefork;p uw-testbin/widefork;p uw-testbin/widefork;q"
+// sys161 kernel "p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p testbin/matmult;p uw-testbin/vm-data1;p uw-testbin/vm-data1;p uw-testbin/vm-data1; p testbin/matmult;"
+// int
+// as_define_stack_modified(struct addrspace *as, vaddr_t *stackptr,char** args)
+// {
+// 	KASSERT(as->as_stackpbase != 0);
+// 	*stackptr = USERSTACK;
 
-	char** argv_kernel = args;
-	int index = 0;
-	int result;
-	int arg_length;
-	// We iterate through the char** on the kernel here. 
-	while(argv_kernel[index] != NULL){
-			char *argument = NULL;
-			// Adding 1 to the length for for \0
-			arg_length = strlen(argv_kernel[index]) + 1; 
-			size_t original_length = arg_length;
-			//Checking if the length of this string is divisible by 4 or not otherwise we make 
-			arg_length = ROUNDUP(arg_length, 8);
-			DEBUG(DB_SYSCALL,"Old Arg_length = %d, New Arg_length : %d",original_length,arg_length);
+// 	char** argv_kernel = args;
+// 	int index = 0;
+// 	int result;
+// 	int arg_length;
+// 	// We iterate through the char** on the kernel here. 
+// 	while(argv_kernel[index] != NULL){
+// 			char *argument = NULL;
+// 			// Adding 1 to the length for for \0
+// 			arg_length = strlen(argv_kernel[index]) + 1; 
+// 			size_t original_length = arg_length;
+// 			//Checking if the length of this string is divisible by 4 or not otherwise we make 
+// 			arg_length = ROUNDUP(arg_length, 8);
+// 			DEBUG(DB_SYSCALL,"Old Arg_length = %d, New Arg_length : %d",original_length,arg_length);
 
-			argument = kmalloc(sizeof(arg_length));
-			argument = kstrdup(argv_kernel[index]);
+// 			argument = kmalloc(sizeof(arg_length));
+// 			argument = kstrdup(argv_kernel[index]);
 
-			// DEBUG(DB_SYSCALL,"VALUE OF ARGUMENT IN KERNEL AFTER PADDING : ");
-			//Subtracting from the Stack pointer and then copying the item argument on the stack
+// 			// DEBUG(DB_SYSCALL,"VALUE OF ARGUMENT IN KERNEL AFTER PADDING : ");
+// 			//Subtracting from the Stack pointer and then copying the item argument on the stack
 
-			// IMPORTANT : you need to subtract the stack ptr first and then you need to copyout as
-			// Copyout will start and then grow upwards.
-			stackptr -= arg_length;
+// 			// IMPORTANT : you need to subtract the stack ptr first and then you need to copyout as
+// 			// Copyout will start and then grow upwards.
+// 			stackptr -= arg_length;
 
-			result = copyoutstr((const void *) argument, (userptr_t)stackptr,(size_t) arg_length, &original_length);
-			if (result) {
-				kfree(argument);
-				return result;
-			}
-			kfree(argument);
-			argv_kernel[index] = (char *)stackptr;
-			index+= 1;	
-	}
+// 			result = copyoutstr((const void *) argument, (userptr_t)stackptr,(size_t) arg_length, &original_length);
+// 			if (result) {
+// 				kfree(argument);
+// 				return result;
+// 			}
+// 			kfree(argument);
+// 			argv_kernel[index] = (char *)stackptr;
+// 			index+= 1;	
+// 	}
 
-		if (argv_kernel[index] == NULL) {
-				stackptr -= 4 * sizeof(char);
-		}
+// 		if (argv_kernel[index] == NULL) {
+// 				stackptr -= 4 * sizeof(char);
+// 		}
 
-		int counter = index-1; // As we don't want NULL
-		while (counter >= 0){
-			// Now we need to copy the pointers we created previously to the user stack.
-			// So we subtract the stack ptr. 
-			stackptr = stackptr - sizeof(char*);
-			// Now we copyout this pointer to the Userstack
-			result = copyout((const void *) (argv_kernel+counter), (userptr_t) stackptr, (sizeof(char *)));
-			counter -= 1;
-			if (result) {
-				return result;
-			}
-		}
-	return 0;
-}
+// 		int counter = index-1; // As we don't want NULL
+// 		while (counter >= 0){
+// 			// Now we need to copy the pointers we created previously to the user stack.
+// 			// So we subtract the stack ptr. 
+// 			stackptr = stackptr - sizeof(char*);
+// 			// Now we copyout this pointer to the Userstack
+// 			result = copyout((const void *) (argv_kernel+counter), (userptr_t) stackptr, (sizeof(char *)));
+// 			counter -= 1;
+// 			if (result) {
+// 				return result;
+// 			}
+// 		}
+// 	return 0;
+// }
 
 int
 as_copy(struct addrspace *old, struct addrspace **ret)
@@ -566,6 +666,33 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	new->as_vbase2 = old->as_vbase2;
 	new->as_npages2 = old->as_npages2;
 
+
+	// FOR THE TEXT SECTION
+	new->as_pbase1 = kmalloc(sizeof(paddr_t)*new->as_npages1);
+	if (new->as_pbase1 == 0) {
+		return ENOMEM;
+	}
+	for (unsigned int i = 0; i < new->as_npages1; i++){
+		new->as_pbase1[i] = 0;
+	}
+
+	new->as_pbase2 = kmalloc(sizeof(paddr_t) * new->as_npages2);
+	if (new->as_pbase2 == 0) {
+		return ENOMEM;
+	}
+	for (unsigned int i = 0; i < new->as_npages2; i++){
+		new->as_pbase2[i] = 0;
+	}
+
+	new->as_stackpbase = kmalloc(sizeof(paddr_t) * DUMBVM_STACKPAGES);
+	if (new->as_stackpbase == 0) {
+		return ENOMEM;
+	}
+	for (unsigned int i = 0; i < DUMBVM_STACKPAGES; i++){
+		new->as_stackpbase[i] = 0;
+	}
+
+
 	/* (Mis)use as_prepare_load to allocate some physical memory. */
 	if (as_prepare_load(new)) {
 		as_destroy(new);
@@ -576,18 +703,21 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	KASSERT(new->as_pbase2 != 0);
 	KASSERT(new->as_stackpbase != 0);
 
-	memmove((void *)PADDR_TO_KVADDR(new->as_pbase1),
-		(const void *)PADDR_TO_KVADDR(old->as_pbase1),
-		old->as_npages1*PAGE_SIZE);
-
-	memmove((void *)PADDR_TO_KVADDR(new->as_pbase2),
-		(const void *)PADDR_TO_KVADDR(old->as_pbase2),
-		old->as_npages2*PAGE_SIZE);
-
-	memmove((void *)PADDR_TO_KVADDR(new->as_stackpbase),
-		(const void *)PADDR_TO_KVADDR(old->as_stackpbase),
-		DUMBVM_STACKPAGES*PAGE_SIZE);
+	for(unsigned int i = 0; i < new->as_npages1; i++){
+		memmove((void *)PADDR_TO_KVADDR(new->as_pbase1[i]),
+		(const void *)PADDR_TO_KVADDR(old->as_pbase1[i]),PAGE_SIZE);
+	}
 	
+	for(unsigned int i = 0; i < new->as_npages2; i++){
+		memmove((void *)PADDR_TO_KVADDR(new->as_pbase2[i]),
+		(const void *)PADDR_TO_KVADDR(old->as_pbase2[i]),PAGE_SIZE);
+	}
+
+	for(unsigned int i = 0; i < DUMBVM_STACKPAGES; i++){
+		memmove((void *)PADDR_TO_KVADDR(new->as_stackpbase[i]),
+		(const void *)PADDR_TO_KVADDR(old->as_stackpbase[i]),PAGE_SIZE);
+	}
+
 	*ret = new;
 	return 0;
 }

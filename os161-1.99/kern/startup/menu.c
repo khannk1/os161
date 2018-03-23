@@ -576,6 +576,7 @@ static struct {
 	{ "halt",	cmd_quit },
 	{ "dth" ,   cmd_debug_on},
 	{ "coremap", cmd_showcoremap},
+	{ "pagetable", cmd_showpagetable},
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
