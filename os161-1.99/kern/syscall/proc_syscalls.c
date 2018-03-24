@@ -247,6 +247,7 @@ int sys_fork(struct trapframe *tf, pid_t *retval){
 
 int sys_execv(const char *progname,char **argv){
 	struct addrspace *as;
+	struct addrspace *old_addrspace;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
@@ -327,7 +328,9 @@ int sys_execv(const char *progname,char **argv){
 	}
 
 	/* Switch to it and activate it. */
+	old_addrspace = curproc_getas();
 	curproc_setas(as);
+	as_destroy(old_addrspace);
 	as_activate();
 
 	/* Load the executable. */
